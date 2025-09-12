@@ -1,0 +1,48 @@
+# --- Python cache & compiled files ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# --- Environment / virtualenv directories ---
+# Conda environment (typical local folder)
+.env/
+.venv/
+env/
+venv/
+*.conda-env
+*.conda
+
+# If you use conda envs outside project root, you can ignore their YAML exports
+environment.yml
+
+# --- Build / distribution / packaging ---
+build/
+dist/
+pip-wheel-metadata/
+*.egg-info/
+.wheels/
+
+# --- Jupyter / notebooks ---
+.ipynb_checkpoints/
+
+# --- IDE / editor settings ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS-specific ---
+.DS_Store
+Thumbs.db
+
+# --- Logs / temp files ---
+*.log
+*.tmp
+*.temp
+

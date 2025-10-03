@@ -24,10 +24,9 @@ class EKF:
     dynamic_model: DynamicModel[StateCV]
     sensor_model: SensorModel[MeasPos]
 
-    def step(self,
-             x_est_prev: MultiVarGauss[StateCV],
-             z: MeasPos,
-             dt: float) -> OutputEKF:
+    def step(
+        self, x_est_prev: MultiVarGauss[StateCV], z: MeasPos, dt: float
+    ) -> OutputEKF:
         """Perform one EKF update step."""
         x_est_pred = self.dynamic_model.pred_from_est(x_est_prev, dt)
         z_est_pred = self.sensor_model.pred_from_est(x_est_pred)
@@ -52,8 +51,9 @@ class FilterIMM:
     dynamic_model: ModelImm
     sensor_model: SensorPos
 
-    def calculate_mixings(self, x_est_prev: GaussianMixture[StateCV],
-                          dt: float) -> np.ndarray:
+    def calculate_mixings(
+        self, x_est_prev: GaussianMixture[StateCV], dt: float
+    ) -> np.ndarray:
         """Calculate the mixing probabilities, following step 1 in (6.4.1).
 
         The output should be on the following from:
@@ -62,43 +62,58 @@ class FilterIMM:
         pi_mat = self.dynamic_model.get_pi_mat_d(dt)  # the pi in (6.6)
         prev_weights = x_est_prev.weights  # \mathbf{p}_{k-1}
 
-        mixing_probs = None  # TODO
+        # Calculate mixing probabilities using (6.32)
+        # mixing_probs[i, j] = mu_{i|j} = pi[i,j] * prev_weights[i] / normalization
+        mixing_probs = np.zeros((len(prev_weights), len(prev_weights)))
+
+        # First calculate the predicted weights for normalization (6.6)
+        weights_pred = pi_mat.T @ prev_weights
+
+        for j in range(len(prev_weights)):  # for each current mode s_k
+            for i in range(len(prev_weights)):  # for each previous mode s_{k-1}
+                mixing_probs[i, j] = pi_mat[i, j] * prev_weights[i] / weights_pred[j]
 
         # TODO remove this
-        mixing_probs = filter_solu.FilterIMM.calculate_mixings(
-            self, x_est_prev, dt)
+        # mixing_probs = filter_solu.FilterIMM.calculate_mixings(self, x_est_prev, dt)
 
         return mixing_probs
 
-    def mixing(self,
-               x_est_prev: GaussianMixture[StateCV],
-               mixing_probs: GaussianMixture[StateCV]
-               ) -> Sequence[MultiVarGauss[StateCV]]:
-        """Calculate the moment-based approximations, 
-        following step 2 in (6.4.1). 
+    def mixing(
+        self,
+        x_est_prev: GaussianMixture[StateCV],
+        mixing_probs: np.ndarray,
+    ) -> Sequence[MultiVarGauss[StateCV]]:
+        """Calculate the moment-based approximations,
+        following step 2 in (6.4.1).
         Should return a gaussian with mean=(6.34) and cov=(6.35).
 
-        Hint: Create a GaussianMixture for each mode density (6.33), 
+        Hint: Create a GaussianMixture for each mode density (6.33),
         and use .reduce() to calculate (6.34) and (6.35).
         """
         moment_based_preds = []
-        for i in range(len(x_est_prev)):
-            mixture = None  # TODO (GaussianMixture)
-            momend_based_pred = None  # TODO (MultiVarGauss)
-            moment_based_preds.append(momend_based_pred)
+        for j in range(len(x_est_prev)):  # for each current mode
+            # Create weights for this mode j using mixing probabilities
+            # mixing_probs[i, j] = probability that previous mode was i given current mode is j
+            weights_j = mixing_probs[:, j]  # column j contains mu_{i|j} for all i
+
+            # Create GaussianMixture for mode j using (6.33)
+            mixture = GaussianMixture(weights_j, x_est_prev.gaussians)
+
+            # Reduce to get moment-based prediction using (6.34) and (6.35)
+            moment_based_pred = mixture.reduce()
+            moment_based_preds.append(moment_based_pred)
 
         # TODO remove this
-        moment_based_preds = filter_solu.FilterIMM.mixing(
-            self, x_est_prev, mixing_probs)
+        # moment_based_preds = filter_solu.FilterIMM.mixing(
+        #     self, x_est_prev, mixing_probs
+        # )
         return moment_based_preds
 
-    def mode_match_filter(self,
-                          moment_based_preds: GaussianMixture[StateCV],
-                          z: MeasPos,
-                          dt: float
-                          ) -> Sequence[OutputEKF]:
+    def mode_match_filter(
+        self, moment_based_preds: GaussianMixture[StateCV], z: MeasPos, dt: float
+    ) -> Sequence[OutputEKF]:
         """Calculate the mode-match filter outputs (6.36),
-        following step 3 in (6.4.1). 
+        following step 3 in (6.4.1).
 
         Hint: Use the EKF class from the top of this file.
         The last part (6.37) is not part of this
@@ -106,21 +121,23 @@ class FilterIMM:
         ekf_outs = []
 
         for i, x_prev in enumerate(moment_based_preds):
-            out_ekf = None  # TODO (OutputEKF)
+            # Create EKF with the appropriate dynamic model for mode i
+            ekf = EKF(self.dynamic_model.models[i], self.sensor_model)
+            
+            # Run one EKF step using the moment-based prediction as input
+            out_ekf = ekf.step(x_prev, z, dt)
             ekf_outs.append(out_ekf)
 
         # TODO remove this
-        ekf_outs = filter_solu.FilterIMM.mode_match_filter(
-            self, moment_based_preds, z, dt)
+        # ekf_outs = filter_solu.FilterIMM.mode_match_filter(
+        #     self, moment_based_preds, z, dt
+        # )
 
         return ekf_outs
 
-    def update_probabilities(self,
-                             ekf_outs: Sequence[OutputEKF],
-                             z: MeasPos,
-                             dt: float,
-                             weights: np.ndarray
-                             ) -> np.ndarray:
+    def update_probabilities(
+        self, ekf_outs: Sequence[OutputEKF], z: MeasPos, dt: float, weights: np.ndarray
+    ) -> np.ndarray:
         """Update the mixing probabilities,
         using (6.37) from step 3 and (6.38) from step 4 in (6.4.1).
 
@@ -135,13 +152,13 @@ class FilterIMM:
 
         # TODO remove this
         weights_upd = filter_solu.FilterIMM.update_probabilities(
-            self, ekf_outs, z, dt, weights)
+            self, ekf_outs, z, dt, weights
+        )
         return weights_upd
 
-    def step(self,
-             x_est_prev: GaussianMixture[StateCV],
-             z: MeasPos,
-             dt) -> GaussianMixture[StateCV]:
+    def step(
+        self, x_est_prev: GaussianMixture[StateCV], z: MeasPos, dt
+    ) -> GaussianMixture[StateCV]:
         """Perform one step of the IMM filter."""
         mixing_probs = None  # TODO
         momend_based_preds = None  # TODO
@@ -149,20 +166,24 @@ class FilterIMM:
         weights_upd = None  # TODO
         x_est_upd = None  # TODO
         if ekf_outs is not None:  # You can remove this
-            x_est_pred = GaussianMixture(x_est_prev.weights,
-                                         [out.x_est_pred for out in ekf_outs])
+            x_est_pred = GaussianMixture(
+                x_est_prev.weights, [out.x_est_pred for out in ekf_outs]
+            )
 
-            z_est_pred = GaussianMixture(x_est_prev.weights,
-                                         [out.z_est_pred for out in ekf_outs])
+            z_est_pred = GaussianMixture(
+                x_est_prev.weights, [out.z_est_pred for out in ekf_outs]
+            )
 
         # TODO remove this
         x_est_upd, x_est_pred, z_est_pred = filter_solu.FilterIMM.step(
-            self, x_est_prev, z, dt)
+            self, x_est_prev, z, dt
+        )
 
         return x_est_upd, x_est_pred, z_est_pred
 
-    def run(self, x0_est: GaussianMixture[StateCV], zs: TimeSequence[MeasPos]
-            ) -> TimeSequence[GaussianMixture[StateCV]]:
+    def run(
+        self, x0_est: GaussianMixture[StateCV], zs: TimeSequence[MeasPos]
+    ) -> TimeSequence[GaussianMixture[StateCV]]:
         """Run the IMM filter."""
         logging.info("Running IMM filter")
         x_est_upds = TimeSequence()
@@ -172,7 +193,7 @@ class FilterIMM:
         t_prev = 0
         for t, z in tqdm.tqdm(zs.items(), total=len(zs)):
             t_prev, x_est_prev = x_est_upds[-1]
-            dt = np.round(t-t_prev, 8)
+            dt = np.round(t - t_prev, 8)
 
             x_est_upd, x_est_pred, z_est_pred = self.step(x_est_prev, z, dt)
             x_est_upds.insert(t, x_est_upd)

@@ -6,7 +6,7 @@ from senfuslib import MultiVarGauss
 from config import DEBUG
 from solution import gaussian_mixture as gaussian_mixture_solu
 
-S = TypeVar('S', bound=np.ndarray)  # State type
+S = TypeVar("S", bound=np.ndarray)  # State type
 
 
 @dataclass
@@ -21,17 +21,33 @@ class GaussianMixture(Generic[S]):
     def mean(self):
         """Find the mean of the gaussian mixture.
         Hint: Use (6.24) from the book."""
+        assert len(self.gaussians) == len(
+            self.weights
+        ), f"Not the same length: {len(self.gaussians)} != {len(self.weights)}"
+        mean = np.average(
+            np.array([g.mean for g in self.gaussians]), axis=0, weights=self.weights
+        )
+        return mean
 
         # TODO remove this
-        mean = gaussian_mixture_solu.GaussianMixture.mean(self)
-        return mean
+        # mean = gaussian_mixture_solu.GaussianMixture.mean(self)
+        # return mean
 
     def cov(self):
         """Find the covariance of the gaussian mixture.
         Hint: Use (6.25) from the book."""
 
-        # TODO remove this
-        cov = gaussian_mixture_solu.GaussianMixture.cov(self)
+        assert len(self.gaussians) == len(
+            self.weights
+        ), f"Not the same length: {len(self.gaussians)} != {len(self.weights)}"
+        mean = self.mean()
+        weights = self.weights
+        cov = np.tensordot(
+            weights,
+            np.array([g.cov + g.mean @ g.mean.T for g in self.gaussians]),
+            axes=1,
+        )
+        cov -= mean @ mean.T
         return cov
 
     def reduce(self) -> MultiVarGauss[S]:
@@ -39,27 +55,27 @@ class GaussianMixture(Generic[S]):
 
         mean = self.mean().view(self.gaussians[0].mean.__class__)
         cov = self.cov()
-
         gauss = MultiVarGauss(mean, cov)
         return gauss
 
     def reduce_partial(self, indices: Sequence[int]):
         weights_to_reduce = np.array([self.weights[i] for i in indices])
         gauss_to_reduce = [self.gaussians[i] for i in indices]
-        reduced = GaussianMixture(weights_to_reduce/np.sum(weights_to_reduce),
-                                  gauss_to_reduce).reduce()
+        reduced = GaussianMixture(
+            weights_to_reduce / np.sum(weights_to_reduce), gauss_to_reduce
+        ).reduce()
 
         keep_indices = list(set(range(len(self))) - set(indices))
         weights_to_keep = [self.weights[i] for i in keep_indices]
         gauss_to_keep = [self.gaussians[i] for i in keep_indices]
         out = GaussianMixture(
             np.array([sum(weights_to_reduce), *weights_to_keep]),
-            [reduced, *gauss_to_keep])
+            [reduced, *gauss_to_keep],
+        )
         return out
 
     def pdf(self, x):
-        return np.sum(self.weights * np.array([g.pdf(x)
-                                              for g in self.gaussians]))
+        return np.sum(self.weights * np.array([g.pdf(x) for g in self.gaussians]))
 
     def __len__(self):
         return len(self.gaussians)

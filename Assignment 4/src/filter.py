@@ -123,7 +123,7 @@ class FilterIMM:
         for i, x_prev in enumerate(moment_based_preds):
             # Create EKF with the appropriate dynamic model for mode i
             ekf = EKF(self.dynamic_model.models[i], self.sensor_model)
-            
+
             # Run one EKF step using the moment-based prediction as input
             out_ekf = ekf.step(x_prev, z, dt)
             ekf_outs.append(out_ekf)

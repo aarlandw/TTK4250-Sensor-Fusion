@@ -17,11 +17,10 @@ class SensorPos(SensorModel):
         return MeasPos.from_array(self.H(x) @ x)
 
     def H(self, x: StateCV) -> np.ndarray:
-        return np.array([[1, 0, 0, 0],
-                         [0, 1, 0, 0]])
+        return np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
 
     def R(self, x: StateCV) -> np.ndarray:
-        return np.eye(2) * self.std_pos ** 2
+        return np.eye(2) * self.std_pos**2
 
 
 @dataclass
@@ -44,8 +43,9 @@ class SensorPosClutter(SensorModel[Sequence[MeasPos]]):
 
     def h(self, x: StateCV) -> MeasPos:
         meas = self.sensor.h(x)
-        inside = (self.x_min <= meas.x <= self.x_max
-                  and self.y_min <= meas.y <= self.y_max)
+        inside = (
+            self.x_min <= meas.x <= self.x_max and self.y_min <= meas.y <= self.y_max
+        )
         msg = f"Measurement {meas} outside of sensor area"
         self.area
         if inside:
@@ -62,15 +62,14 @@ class SensorPosClutter(SensorModel[Sequence[MeasPos]]):
     def R(self, x: StateCV) -> np.ndarray:
         return self.sensor.R(x)
 
-    def sample_from_state(self, x: StateCV
-                          ) -> Sequence[MeasPos]:
+    def sample_from_state(self, x: StateCV) -> Sequence[MeasPos]:
         zs = []
         if np.random.rand() < self.prob_detect:
             zs.append(super().sample_from_state(x))
         n_clutter = poisson.rvs(self.clutter_density * self.area)
-        clutter = np.random.uniform((self.x_min, self.y_min),
-                                    (self.x_max, self.y_max),
-                                    size=(n_clutter, 2))
+        clutter = np.random.uniform(
+            (self.x_min, self.y_min), (self.x_max, self.y_max), size=(n_clutter, 2)
+        )
         zs.extend(MeasPos(*m, isclutter=True) for m in clutter)
         np.random.shuffle(zs)
         return zs

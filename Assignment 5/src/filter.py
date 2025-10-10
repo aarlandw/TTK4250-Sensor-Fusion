@@ -9,8 +9,13 @@ from scipy.stats import chi2
 from states import StateCV, MeasPos
 from models import ModelImm
 from sensors import SensorPosClutter
-from senfuslib import (MultiVarGauss, DynamicModel, SensorModel, TimeSequence,
-                       GaussianMixture)
+from senfuslib import (
+    MultiVarGauss,
+    DynamicModel,
+    SensorModel,
+    TimeSequence,
+    GaussianMixture,
+)
 from config import DEBUG
 from solution import filter as filter_solu
 
@@ -20,16 +25,20 @@ class EKF:
     dynamic_model: DynamicModel[StateCV]
     sensor_model: SensorModel[MeasPos]
 
-    def pred(self, x_est_prev: MultiVarGauss[StateCV], dt: float
-             ) -> tuple[MultiVarGauss[StateCV], MultiVarGauss[MeasPos]]:
+    def pred(
+        self, x_est_prev: MultiVarGauss[StateCV], dt: float
+    ) -> tuple[MultiVarGauss[StateCV], MultiVarGauss[MeasPos]]:
         """Perform one EKF prediction step."""
         x_est_pred = self.dynamic_model.pred_from_est(x_est_prev, dt)
         z_est_pred = self.sensor_model.pred_from_est(x_est_pred)
         return x_est_pred, z_est_pred
 
-    def update(self, x_est_pred: MultiVarGauss[StateCV],
-               z_est_pred: MultiVarGauss[MeasPos],
-               z: MeasPos) -> MultiVarGauss[StateCV]:
+    def update(
+        self,
+        x_est_pred: MultiVarGauss[StateCV],
+        z_est_pred: MultiVarGauss[MeasPos],
+        z: MeasPos,
+    ) -> MultiVarGauss[StateCV]:
         """Perform one EKF update step."""
         H_mat = self.sensor_model.H(x_est_pred.mean)
         P_mat = x_est_pred.cov
@@ -59,10 +68,9 @@ class FilterPDA:
         self.ekf = EKF(self.dynamic_model, self.sensor_model.sensor)
         self.gate = chi2.ppf(self.gate_prob, 2)  # g**2 on page 120
 
-    def gate_zs(self,
-                z_est_pred: MultiVarGauss[MeasPos],
-                zs: Sequence[MeasPos]
-                ) -> tuple[set[int], Sequence[MeasPos]]:
+    def gate_zs(
+        self, z_est_pred: MultiVarGauss[MeasPos], zs: Sequence[MeasPos]
+    ) -> tuple[set[int], Sequence[MeasPos]]:
         """Gate the measurements.
         That is, remove measurements with a probability of being clutter
         greater than self.gate_prob.
@@ -72,43 +80,52 @@ class FilterPDA:
         zs_gated = []
 
         for i, z in enumerate(zs):
-            condition = None  # TODO
+            dz = z - z_est_pred.mean
+            d2 = dz.T @ np.linalg.solve(z_est_pred.cov, dz)
+            condition = d2 <= self.gate
             if condition:
                 zs_gated.append(z)
                 gated_indices.add(i)
 
         # TODO remove this
-        gated_indices, zs_gated = filter_solu.FilterPDA.gate_zs(
-            self, z_est_pred, zs)
+        # gated_indices, zs_gated = filter_solu.FilterPDA.gate_zs(self, z_est_pred, zs)
 
         return gated_indices, zs_gated
 
-    def get_assoc_probs(self, z_est_pred: MultiVarGauss[MeasPos],
-                        zs: Sequence[MeasPos]) -> np.ndarray:
+    def get_assoc_probs(
+        self, z_est_pred: MultiVarGauss[MeasPos], zs: Sequence[MeasPos]
+    ) -> np.ndarray:
         """Compute the association probabilities.
         P{a_k|Z_{1:k}} = assoc_probs[a_k]    (corollary 7.3.3)
 
         Hint: use some_gauss.pdf(something), rememeber to normalize"""
-        lamb = self.sensor_model.clutter_density
+        clutter_density = self.sensor_model.clutter_density
         P_D = self.sensor_model.prob_detect
 
-        assoc_probs = np.empty(len(zs) + 1)
+        m = len(zs)  # Number of measurements
+        weights = np.empty(m + 1)
 
-        assoc_probs[0] = None  # TODO
+        # Weight for the null hypothesis (no detection)
+        w0 = clutter_density * (1 - P_D)
+        weights[0] = w0
+
         for i, z in enumerate(zs):
-            assoc_probs[i+1] = None  # TODO
+            weights[i + 1] = P_D * z_est_pred.pdf(z)
+
+        # Normalize the weights to get association probabilities
+        assoc_probs = weights / np.sum(weights)
 
         # TODO remove this
-        assoc_probs = filter_solu.FilterPDA.get_assoc_probs(
-            self, z_est_pred, zs)
+        # assoc_probs = filter_solu.FilterPDA.get_assoc_probs(self, z_est_pred, zs)
 
         return assoc_probs
 
-    def get_estimates(self,
-                      x_est_pred: MultiVarGauss[StateCV],
-                      z_est_pred: MultiVarGauss[MeasPos],
-                      zs_gated: Sequence[MeasPos]
-                      ) -> Sequence[MultiVarGauss[StateCV]]:
+    def get_estimates(
+        self,
+        x_est_pred: MultiVarGauss[StateCV],
+        z_est_pred: MultiVarGauss[MeasPos],
+        zs_gated: Sequence[MeasPos],
+    ) -> Sequence[MultiVarGauss[StateCV]]:
         """Get the estimates corresponding to each association hypothesis.
 
         Compared to the book that is:
@@ -116,47 +133,51 @@ class FilterPDA:
         P_k^{a_k} = x_ests[a_k].cov         (7.21)
 
         Hint: Use self.ekf"""
+        
         x_ests = []
-        gauss_ak0 = None  # TODO
+        gauss_ak0 = x_est_pred  # Hypothesis a_k = 0 (no detection). Update is same as prediction.
         x_ests.append(gauss_ak0)
+
+        # Hypotheses a_k > 0 (detections). Update for each gated measurement.
         for z in zs_gated:
-            x_est_upd = None  # TODO
+            x_est_upd = self.ekf.update(x_est_pred, z_est_pred, z)
             x_ests.append(x_est_upd)
 
         # TODO remove this
-        x_ests = filter_solu.FilterPDA.get_estimates(
-            self, x_est_pred, z_est_pred, zs_gated)
+        # x_ests = filter_solu.FilterPDA.get_estimates(
+        #     self, x_est_pred, z_est_pred, zs_gated
+        # )
         return x_ests
 
-    def step(self,
-             x_est_prev: MultiVarGauss[StateCV],
-             zs: Sequence[MeasPos],
-             dt: float) -> tuple[MultiVarGauss[StateCV],
-                                 MultiVarGauss[StateCV],
-                                 MultiVarGauss[MeasPos],
-                                 set[int]]:
+    def step(
+        self, x_est_prev: MultiVarGauss[StateCV], zs: Sequence[MeasPos], dt: float
+    ) -> tuple[
+        MultiVarGauss[StateCV], MultiVarGauss[StateCV], MultiVarGauss[MeasPos], set[int]
+    ]:
         """Perform one step of the PDAF."""
 
-        x_est_pred, z_est_pred = None, None  # TODO Hint: (7.16) and (7.17)
-        gated_indices, zs_gated = None, None  # TODO Hint: (7.3.5)
-        assoc_probs = None  # TODO Hint (Corollary 7.3.3)
-        x_ests = None  # TODO Hint: (7.20) and (7.21)
-        x_est_upd_mixture = None  # TODO Hint: (7.3.6)
+        x_est_pred, z_est_pred = self.ekf.pred(x_est_prev, dt) # TODO Hint: (7.16) and (7.17)
+        gated_indices, zs_gated = self.gate_zs(z_est_pred, zs)  # TODO Hint: (7.3.5)
+        assoc_probs = self.get_assoc_probs(z_est_pred, zs_gated)  # TODO Hint (Corollary 7.3.3)
+        x_ests = self.get_estimates(x_est_pred, z_est_pred, zs_gated)  # TODO Hint: (7.20) and (7.21)
+        x_est_upd_mixture = GaussianMixture(assoc_probs, x_ests)  # TODO Hint: (7.3.6)
 
-        x_est_upd = None  # TODO Hint: (7.27) use reduce()
+        x_est_upd = x_est_upd_mixture.reduce()  # Hint: (7.27) use reduce()
 
         # TODO remove this
-        x_est_upd, x_est_pred, z_est_pred, gated_indices = filter_solu.FilterPDA.step(
-            self, x_est_prev, zs, dt)
+        # x_est_upd, x_est_pred, z_est_pred, gated_indices = filter_solu.FilterPDA.step(
+        #     self, x_est_prev, zs, dt
+        # )
         return x_est_upd, x_est_pred, z_est_pred, gated_indices
 
-    def run(self,
-            x0_est: MultiVarGauss[StateCV],
-            zs_tseq: TimeSequence[Sequence[MeasPos]]
-            ) -> tuple[TimeSequence[MultiVarGauss[StateCV]],
-                       TimeSequence[MultiVarGauss[StateCV]],
-                       TimeSequence[MultiVarGauss[MeasPos]],
-                       TimeSequence[set[int]]]:
+    def run(
+        self, x0_est: MultiVarGauss[StateCV], zs_tseq: TimeSequence[Sequence[MeasPos]]
+    ) -> tuple[
+        TimeSequence[MultiVarGauss[StateCV]],
+        TimeSequence[MultiVarGauss[StateCV]],
+        TimeSequence[MultiVarGauss[MeasPos]],
+        TimeSequence[set[int]],
+    ]:
         """Run the PDAF filter."""
         logging.info("Running PDAF filter")
         x_est_upds = TimeSequence()
@@ -167,10 +188,11 @@ class FilterPDA:
         t_prev = 0
         for t, zs in tqdm.tqdm(zs_tseq.items(), total=len(zs_tseq)):
             t_prev, x_est_prev = x_est_upds[-1]
-            dt = np.round(t-t_prev, 8)
+            dt = np.round(t - t_prev, 8)
 
             x_est_upd, x_est_pred, z_est_pred, gated_indices = self.step(
-                x_est_prev, zs, dt)
+                x_est_prev, zs, dt
+            )
             x_est_upds.insert(t, x_est_upd)
             x_est_preds.insert(t, x_est_pred)
             z_est_preds.insert(t, z_est_pred)

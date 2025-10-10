@@ -48,3 +48,7 @@ Thumbs.db
 
 # --- Others ---
 # *.zip
+
+# --- Handin files --- 
+handin.zip
+**/handin/

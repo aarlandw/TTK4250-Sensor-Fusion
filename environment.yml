@@ -1,0 +1,18 @@
+name: ttk4250
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - autopep8
+  - flake8
+  - ipython
+  - jupyter
+  - matplotlib
+  - numpy
+  - pylint
+  - pyqt
+  - pytest
+  - python=3.9
+  - scipy
+  - tqdm
+prefix: /home/william/miniconda3/envs/ttk4250

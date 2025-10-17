@@ -19,7 +19,7 @@ venv/
 *.conda
 
 # If you use conda envs outside project root, you can ignore their YAML exports
-environment.yml
+# environment.yml
 
 # --- Build / distribution / packaging ---
 build/
